@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket 客户端</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: url('pictureSrc/background.png') no-repeat center center fixed;
+        }
+
+        .main {
+            display: flex;
+
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            position: fixed;
+            /* 固定位置 */
+            bottom: 20px;
+            /* 距离底部20px */
+            padding: 10px;
+        }
+
+        /* 媒体查询，用于手机屏幕样式 */
+
+
+        .search-container {
+            position: relative;
+            width: 600px;
+        }
+
+        .search-input {
+            width: 73%;
+
+            padding: 12px 24px;
+            padding-right: 20px;
+            border: none;
+            border-radius: 25px 1px 1px 25px;
+            font-size: 16px;
+            outline: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .search-button {
+            position: absolute;
+            right: 8%;
+            top: 0;
+            bottom: 0;
+            border: none;
+            border-radius: 1px 25px 25px 1px;
+            padding: 0 20px;
+            cursor: pointer;
+            outline: none;
+            font-size: medium;
+            background-color: rgb(191, 223, 255);
+            color: rgb(0, 0, 0);
+            z-index: auto;
+        }
+
+        .messages-container {
+            display: flex;
+            flex-direction: column;
+            border-radius: 15px;
+
+            padding: 10px 0;
+            height: calc(100vh - 120px);
+            padding-bottom: 50px;
+            overflow-y: auto;
+            /* 确保聊天框和信息不重叠 */
+        }
+
+
+        .message {
+            padding: 5px 2px;
+            border-radius: 10px;
+            word-wrap: break-word;
+            animation: slideIn 0.5s ease-in-out;
+
+        }
+
+        .message.received {
+            display: flex;
+            margin-bottom: 5px;
+        }
+
+        .message.sent {
+            display: flex;
+            flex-direction: row-reverse;
+            margin-bottom: 5px;
+        }
+
+        .textReceived {
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 10px;
+            max-width: 50%;
+        }
+
+        .textSent {
+            padding: 10px 15px;
+            background: rgba(30, 240, 255, 0.2);
+            border-radius: 10px;
+            max-width: 50%;
+        }
+
+        .message img.avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-left: 10px;
+            margin-right: 10px;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media screen and (min-width: 601px) {
+            body {
+                overflow: hidden;
+            }
+        }
+
+        @media screen and (max-width: 600px) {
+
+            .search-container {
+                width: 100%;
+            }
+
+            .search-input {
+                width: 65%;
+            }
+
+            .search-button {
+                position: absolute;
+                right: 8%;
+                top: 0;
+                bottom: 0;
+                border: none;
+                border-radius: 1px 25px 25px 1px;
+                padding: 0 20px;
+                cursor: pointer;
+                outline: none;
+                font-size: medium;
+                background-color: rgb(191, 223, 255);
+                color: rgb(0, 0, 0);
+                z-index: auto;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+
+
+    <div class="messages-container">
+        <div id="messages" class="messages">
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="search-container">
+            <input type="text" class="search-input" placeholder="输入聊天内容..." id="messageInput"
+                onclick="scrollToTheBottom()">
+            <button class="search-button" onclick="sendMessage()">
+                发送
+            </button>
+        </div>
+    </div>
+
+    <script src="https://kit.fontawesome.com/a076d05399.js"></script>
+
+    <script>
+        const socket = new WebSocket(`ws://172.20.10.11:3000`);
+        var userAvatar
+
+        function generateAvatar() {
+            const seed = Math.random().toString(36).substring(7); // 生成随机种子
+            return `https://api.dicebear.com/9.x/avataaars/svg?seed=${seed}`;
+        }
+
+        function initialize() {
+            userAvatar = localStorage.getItem('userAvatar');
+            if (!userAvatar) {
+                userAvatar = generateAvatar();
+                localStorage.setItem('userAvatar', userAvatar);
+            }
+        }
+        initialize()
+
+        socket.onopen = function (event) {
+            console.log('WebSocket 连接已打开');
+            displayMessage('WebSocket 连接已打开', 'received',
+                'https://api.dicebear.com/9.x/pixel-art/svg');
+        };
+
+        socket.onmessage = function (event) {
+            console.log('收到消息：', event.data);
+            let data;
+
+            if (event.data instanceof Blob) {
+                event.data.text().then(function (text) {
+                    data = JSON.parse(text);
+                    displayMessage(data.message, 'received', data.avatar);
+                });
+            } else {
+                data = JSON.parse(event.data);
+                displayMessage(data.message, 'received', data.avatar);
+            }
+        };
+
+        socket.onclose = function (event) {
+            console.log('WebSocket 连接已关闭');
+            displayMessage('WebSocket 连接已关闭', 'received',
+                'https://api.dicebear.com/9.x/pixel-art/svg');
+        };
+
+        socket.onerror = function (error) {
+            console.error('WebSocket 发生错误：', error);
+            displayMessage('WebSocket 发生错误：' + error.message, 'received',
+                'https://api.dicebear.com/9.x/pixel-art/svg  ');
+        };
+
+
+
+        function sendMessage() {
+            const messageInput = document.querySelector('.search-input');
+            const message = messageInput.value;
+            if (message) {
+                const data = {
+                    message: messageInput.value,
+                    avatar: userAvatar
+                };
+                socket.send(JSON.stringify(data));
+                console.log('发送消息：', message);
+                displayMessage(message, 'sent', userAvatar);
+                messageInput.value = '';
+            }
+
+        }
+
+
+        function displayMessage(message, type, avatar) {
+            const messagesDiv = document.getElementById('messages');
+            const messageElement = document.createElement('div');
+            //头像生成
+            const avatarImg = document.createElement('img');
+            avatarImg.src = avatar;
+            avatarImg.className = 'avatar';
+
+            messageElement.className = 'message ' + type;
+            messagesDiv.appendChild(messageElement);
+            const textSpan = document.createElement('span');
+            textSpan.className = type === 'received' ? 'textReceived' : 'textSent';
+            textSpan.textContent = message
+            messageElement.appendChild(avatarImg);
+            messageElement.appendChild(textSpan);
+            scrollToTheBottom()
+        }
+
+
+
+        function scrollToTheBottom() {
+            const messagesContainer = document.getElementsByClassName('messages-container')[0]
+            messagesContainer.scrollTo({
+                top: messagesContainer.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+
+
+
+        document.querySelector('.search-input').addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+
+</html>
