@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket 客户端</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center center;
+        }
+        .main {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            position: fixed;
+            bottom: 20px;
+            padding: 10px;
+        }
+
+        .search-container {
+            position: relative;
+            width: 600px;
+        }
+
+        .search-input {
+            width: 73%;
+            padding: 12px 24px;
+            padding-right: 20px;
+            border: none;
+            border-radius: 25px 1px 1px 25px;
+            font-size: 16px;
+            outline: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .search-button {
+            position: absolute;
+            right: 8%;
+            top: 0;
+            bottom: 0;
+            border: none;
+            border-radius: 1px 25px 25px 1px;
+            padding: 0 20px;
+            cursor: pointer;
+            outline: none;
+            font-size: medium;
+            background-color: rgb(191, 223, 255);
+            color: rgb(0, 0, 0);
+            z-index: auto;
+        }
+
+        .messages-container {
+            display: flex;
+            flex-direction: column;
+            border-radius: 15px;
+            padding: 10px 0;
+            height: calc(100vh - 120px);
+            padding-bottom: 50px;
+            overflow-y: auto;
+        }
+
+        .message {
+            padding: 5px 2px;
+            border-radius: 10px;
+            word-wrap: break-word;
+            animation: slideIn 0.5s ease-in-out;
+        }
+
+        .message.received {
+            display: flex;
+            margin-bottom: 5px;
+        }
+
+        .message.sent {
+            display: flex;
+            flex-direction: row-reverse;
+            margin-bottom: 5px;
+        }
+
+        .textReceived {
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 10px;
+            max-width: 50%;
+        }
+
+        .textSent {
+            padding: 10px 15px;
+            background: rgba(30, 240, 255, 0.5);
+            border-radius: 10px;
+            max-width: 50%;
+        }
+
+        .message img.avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-left: 10px;
+            margin-right: 10px;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media screen and (min-width: 601px) {
+            body {
+                overflow: hidden;
+            }
+        }
+
+        @media screen and (max-width: 600px) {
+            .search-container {
+                width: 100%;
+            }
+
+            .search-input {
+                width: 65%;
+            }
+
+            .search-button {
+                right: 8%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <div class="messages-container" id="messages-container">
+            <div id="messages" class="messages"></div>
+        </div>
+
+        <div class="main">
+            <div class="search-container">
+                <input type="text" class="search-input" placeholder="输入聊天内容..." id="messageInput">
+                <button class="search-button" onclick="sendMessage()">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://kit.fontawesome.com/a076d05399.js"></script>
+    <script>
+        let socket;
+        let userAvatar = '';
+        let messages = [];
+        let db; // 在全局范围内定义db变量
+
+        const messagesContainer = document.getElementById('messages-container');
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeWebSocket();
+            initializeAvatar();
+            initializeDatabase(loadInitialMessages); 
+            messagesContainer.addEventListener('scroll', handleScroll);
+
+            document.getElementById('messageInput').addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        });
+
+        function initializeWebSocket() {
+            socket = new WebSocket('ws://localhost:3000');
+            socket.onopen = onSocketOpen;
+            socket.onmessage = onSocketMessage;
+            socket.onclose = onSocketClose;
+            socket.onerror = onSocketError;
+        }
+
+        function initializeAvatar() {
+            userAvatar = localStorage.getItem('userAvatar');
+            if (!userAvatar) {
+                userAvatar = generateAvatar();
+                localStorage.setItem('userAvatar', userAvatar);
+            }
+        }
+
+        function generateAvatar() {
+            const seed = Math.random().toString(36).substring(7);
+            return `https://api.dicebear.com/9.x/avataaars/svg?seed=${seed}`;
+        }
+
+        function onSocketOpen(event) {
+            console.log('WebSocket 连接已打开');
+            displayMessage('WebSocket 连接已打开', 'received', 'https://api.dicebear.com/9.x/pixel-art/svg');
+        }
+
+        function onSocketMessage(event) {
+            console.log('收到消息：', event.data);
+            const data = JSON.parse(event.data);
+            displayMessage(data.message, 'received', data.avatar);
+            saveMessageToDatabase(data.message, 'received', data.avatar);
+        }
+
+        function onSocketClose(event) {
+            console.log('WebSocket 连接已关闭');
+            displayMessage('WebSocket 连接已关闭', 'received', 'https://api.dicebear.com/9.x/pixel-art/svg');
+        }
+
+        function onSocketError(error) {
+            console.error('WebSocket 发生错误：', error);
+            displayMessage(`WebSocket 发生错误：${error.message}`, 'received', 'https://api.dicebear.com/9.x/pixel-art/svg');
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value;
+            if (message) {
+                const data = {
+                    message: message,
+                    avatar: userAvatar
+                };
+                socket.send(JSON.stringify(data));
+                console.log('发送消息：', message);
+                displayMessage(message, 'sent', userAvatar);
+                saveMessageToDatabase(message, 'sent', userAvatar);
+                messageInput.value = '';
+            }
+        }
+
+        function displayMessage(text, type, avatar, prepend = false) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${type}`;
+
+            const avatarImg = document.createElement('img');
+            avatarImg.src = avatar;
+            avatarImg.className = 'avatar';
+
+            const textSpan = document.createElement('span');
+            textSpan.className = type === 'received' ? 'textReceived' : 'textSent';
+            textSpan.textContent = text;
+
+            messageElement.appendChild(avatarImg);
+            messageElement.appendChild(textSpan);
+
+            const messagesDiv = document.getElementById('messages');
+            if (prepend) {
+                messagesDiv.prepend(messageElement);
+            } else {
+                messagesDiv.appendChild(messageElement);
+            }
+
+            scrollToTheBottom();
+        }
+
+        function initializeDatabase(callback) {
+            const request = indexedDB.open('chatDatabase', 1);
+
+            request.onupgradeneeded = (event) => {
+                db = event.target.result;
+                const objectStore = db.createObjectStore('messages', {
+                    keyPath: 'id',
+                    autoIncrement: true
+                });
+                objectStore.createIndex('type', 'type', {
+                    unique: false
+                });
+            };
+
+            request.onsuccess = (event) => {
+                db = event.target.result;
+                if (callback) {
+                    callback(); // 确保在 db 初始化完成后调用回调函数
+                }
+            };
+
+            request.onerror = (event) => {
+                console.error('IndexedDB 初始化失败：', event);
+            };
+        }
+
+
+        function saveMessageToDatabase(text, type, avatar) {
+            const transaction = db.transaction(['messages'], 'readwrite');
+            const objectStore = transaction.objectStore('messages');
+            const request = objectStore.add({
+                text,
+                type,
+                avatar,
+                timestamp: Date.now()
+            });
+
+            request.onsuccess = () => {
+                console.log('消息已保存到数据库');
+            };
+
+            request.onerror = (event) => {
+                console.error('消息保存失败：', event);
+            };
+        }
+
+        function loadInitialMessages() {
+            const transaction = db.transaction(['messages'], 'readonly');
+            const objectStore = transaction.objectStore('messages');
+            const request = objectStore.getAll();
+
+            request.onsuccess = (event) => {
+                const allMessages = event.target.result.reverse();
+                loadMoreMessages(allMessages);
+            };
+
+            request.onerror = (event) => {
+                console.error('加载消息失败：', event);
+                loadMoreMessages([]);
+            };
+        }
+
+        function loadMoreMessages(allMessages) {
+            const messagesToLoad = 18;
+            const nextMessages = allMessages.slice(0, messagesToLoad);
+
+            nextMessages.forEach(message => {
+                displayMessage(message.text, message.type, message.avatar, true);
+            });
+
+            allMessages.splice(0, messagesToLoad);
+        }
+
+        function handleScroll() {
+            if (messagesContainer.scrollTop === 0) {
+                const oldScrollHeight = messagesContainer.scrollHeight;
+                const flag = loadMoreMessages();
+
+                if (flag) {
+                    const newScrollHeight = messagesContainer.scrollHeight;
+                    messagesContainer.scrollTop = newScrollHeight - oldScrollHeight;
+                }
+            }
+        }
+
+        function scrollToTheBottom() {
+            messagesContainer.scrollTo({
+                top: messagesContainer.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+
+        document.querySelector('.search-input').addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+
+</html>

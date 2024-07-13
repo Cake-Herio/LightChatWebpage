@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebSocket 客户端</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -13,7 +14,9 @@
             align-items: center;
             height: 100vh;
             margin: 0;
-            background: url('pictureSrc/background.png') no-repeat center center fixed;
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center center;
         }
 
         .main {
@@ -106,7 +109,7 @@
 
         .textSent {
             padding: 10px 15px;
-            background: rgba(30, 240, 255, 0.2);
+            background: rgba(30, 240, 255, 0.5);
             border-radius: 10px;
             max-width: 50%;
         }
@@ -167,126 +170,320 @@
 </head>
 
 <body>
+    <div id="app">
+        <div class="messages-container">
+            <div id="messages" class="messages">
+            </div>
+        </div>
 
-
-
-    <div class="messages-container">
-        <div id="messages" class="messages">
+        <div class="main">
+            <div class="search-container">
+                <input type="text" class="search-input" placeholder="输入聊天内容..." id="messageInput" v-model="newMessage"
+                    @click="scrollToTheBottom" @keydown.enter="sendMessage">
+                <button class="search-button" @click="sendMessage">
+                    发送
+                </button>
+            </div>
         </div>
     </div>
 
-    <div class="main">
-        <div class="search-container">
-            <input type="text" class="search-input" placeholder="输入聊天内容..." id="messageInput"
-                onclick="scrollToTheBottom()">
-            <button class="search-button" onclick="sendMessage()">
-                发送
-            </button>
-        </div>
-    </div>
+
 
     <script src="https://kit.fontawesome.com/a076d05399.js"></script>
-
     <script>
-        const socket = new WebSocket(`ws://172.20.10.11:3000`);
-        var userAvatar
 
-        function generateAvatar() {
-            const seed = Math.random().toString(36).substring(7); // 生成随机种子
-            return `https://api.dicebear.com/9.x/avataaars/svg?seed=${seed}`;
-        }
+        new Vue({
+            el: '#app',
+            data: {
+                socket: null,
+                userAvatar: '',
+                newMessage: '',
+                messages: [],
+                allMessages: [],
+                currentLength: 0,
+                messagesToLoad: 18,
+                localHostSrc: 'ws://localhost:3000',
+                src: "",
+                scrollHeight: 0,
 
-        function initialize() {
-            userAvatar = localStorage.getItem('userAvatar');
-            if (!userAvatar) {
-                userAvatar = generateAvatar();
-                localStorage.setItem('userAvatar', userAvatar);
+            },
+            created() {
+                this.initializeWebSocket();
+                this.initializeAvatar();
+                this.initializeDatabase()
+
+                // this.clearMessages()
+            },
+            mounted() {
+                // 监听滚动事件
+
+                const messagesContainer = this.$el.querySelector('.messages-container');
+                messagesContainer.addEventListener('scroll', this.handleScroll);
+            },
+            methods: {
+
+                initializeWebSocket() {
+                    this.socket = new WebSocket(this.localHostSrc);
+                    this.socket.onopen = this.onSocketOpen;
+                    this.socket.onmessage = this.onSocketMessage;
+                    this.socket.onclose = this.onSocketClose;
+                    this.socket.onerror = this.onSocketError;
+                },
+
+                //头像获取
+                initializeAvatar() {
+                    this.userAvatar = localStorage.getItem('userAvatar');
+                    if (!this.userAvatar) {
+                        this.userAvatar = this.generateAvatar();
+                        localStorage.setItem('userAvatar', this.userAvatar);
+                    }
+                },
+                generateAvatar() {
+                    const seed = Math.random().toString(36).substring(7);
+                    return `https://api.dicebear.com/9.x/avataaars/svg?seed=${seed}`;
+                },
+
+
+                //ws逻辑
+                onSocketOpen(event) {
+                    console.log('WebSocket 连接已打开');
+                    this.displayMessage('WebSocket 连接已打开', 'received',
+                        'https://api.dicebear.com/9.x/pixel-art/svg');
+                },
+                onSocketMessage(event) {
+                    console.log('收到消息：', event.data);
+                    const data = JSON.parse(event.data);
+                    this.displayMessage(data.message, 'received', data.avatar);
+                    this.saveMessageLocally(data.message, 'received', data.avatar);
+                    saveMessageToDatabase(data.message, 'received', data.avatar)
+                },
+                onSocketClose(event) {
+                    console.log('WebSocket 连接已关闭');
+                    this.displayMessage('WebSocket 连接已关闭', 'received',
+                        'https://api.dicebear.com/9.x/pixel-art/svg');
+                },
+                onSocketError(error) {
+                    console.error('WebSocket 发生错误：', error);
+                    this.displayMessage(`WebSocket 发生错误：${error.message}`, 'received',
+                        'https://api.dicebear.com/9.x/pixel-art/svg');
+                },
+                sendMessage() {
+                    if (this.newMessage) {
+                        const data = {
+                            message: this.newMessage,
+                            avatar: this.userAvatar
+                        };
+                        this.socket.send(JSON.stringify(data));
+                        console.log('发送消息：', this.newMessage);
+                        this.displayMessage(this.newMessage, 'sent', this.userAvatar);
+                        // this.saveMessageLocally(this.newMessage, 'sent', this.userAvatar); //存入缓存
+                        this.saveMessageToDatabase(this.newMessage, 'sent', this.userAvatar) //存入数据库
+                        this.newMessage = '';
+                    }
+                },
+                displayMessage(text, type, avatar, prepend = false) {
+                    const id = Date.now();
+                    const messageElement = document.createElement('div');
+                    messageElement.className = `message ${type}`;
+
+                    const avatarImg = document.createElement('img');
+                    avatarImg.src = avatar;
+                    avatarImg.className = 'avatar';
+
+                    const textSpan = document.createElement('span');
+                    textSpan.className = type === 'received' ? 'textReceived' : 'textSent';
+                    textSpan.textContent = text;
+
+                    messageElement.appendChild(avatarImg);
+                    messageElement.appendChild(textSpan);
+
+
+
+                    const messagesDiv = document.getElementById('messages');
+                    if (prepend) {
+                        messagesDiv.prepend(messageElement);
+                    } else {
+                        messagesDiv.appendChild(messageElement);
+                    }
+
+                    this.scrollToTheBottom()
+
+                },
+
+
+                //缓存逻辑
+                // saveMessageLocally(text, type, avatar) {
+                //     const messages = JSON.parse(localStorage.getItem('chatMessages')) || [];
+                //     if (text === 'WebSocket 连接已打开' || text === 'WebSocket 连接已关闭') return;
+                //     messages.push({
+                //         text,
+                //         type,
+                //         avatar
+                //     });
+                //     localStorage.setItem('chatMessages', JSON.stringify(messages));
+                // },
+                // clearMessages() {
+                //     // 清空本地存储中的消息记录
+                //     localStorage.removeItem('chatMessages');
+
+                //     // 清空 Vue 实例中的消息数组
+                //     this.messages = [];
+
+                //     // 清空 DOM 中的消息元素
+                //     const messagesDiv = document.getElementById('messages');
+                //     while (messagesDiv.firstChild) {
+                //         messagesDiv.removeChild(messagesDiv.firstChild);
+                //     }
+
+                //     console.log('消息缓存已清空');
+                // },
+                // loadInitialMessages() {
+                //     this.allMessages = JSON.parse(localStorage.getItem('chatMessages')) || [];
+                //     this.loadMoreMessages();
+                //     const messagesContainer = this.$el.querySelector('.messages-container');
+                //     this.scrollHeight = messagesContainer.scrollHeight;
+                // },
+                // loadMoreMessages() {
+                //     const currentLength = this.messages.length;
+                //     const nextLength = currentLength + this.messagesToLoad;
+                //     const nextMessages = this.allMessages.slice(currentLength, nextLength);
+                //     if (!nextMessages.length) {
+                //         return false
+                //     }
+                //     nextMessages.reverse().forEach(message => {
+                //         this.messages.unshift(message); // 插入到数组顶部
+                //     });
+
+                //     nextMessages.reverse().forEach(message => {
+                //         this.displayMessage(message.text, message.type, message.avatar, true)
+                //     })
+                //     return true
+
+                // },
+
+
+                //数据库存储
+                initializeDatabase() {
+
+                    const request = indexedDB.open('chatDatabase', 1);
+
+                    request.onupgradeneeded = (event) => {
+                        this.db = event.target.result;
+                        const objectStore = this.db.createObjectStore('messages', {
+                            keyPath: 'id',
+                            autoIncrement: true
+                        });
+                        objectStore.createIndex('type', 'type', {
+                            unique: false
+                        });
+                    };
+
+                    request.onsuccess = (event) => {
+                        this.db = event.target.result;
+                        this.loadInitialMessages();
+                    };
+
+                    request.onerror = (event) => {
+                        console.error('IndexedDB 初始化失败：', event);
+                    };
+                },
+                saveMessageToDatabase(text, type, avatar) {
+                    const transaction = this.db.transaction(['messages'], 'readwrite');
+                    const objectStore = transaction.objectStore('messages');
+                    const request = objectStore.add({
+                        text,
+                        type,
+                        avatar,
+                        timestamp: Date.now()
+                    });
+
+                    request.onsuccess = () => {
+                        console.log('消息已保存到数据库');
+                    };
+
+                    request.onerror = (event) => {
+                        console.error('消息保存失败：', event);
+                    };
+                },
+                loadInitialMessages() {
+                    const transaction = this.db.transaction(['messages'], 'readonly');
+                    const objectStore = transaction.objectStore('messages');
+                    const request = objectStore.getAll();
+
+                    request.onsuccess = (event) => {
+                        this.allMessages = event.target.result.reverse();
+                        this.loadMoreMessages();
+                    };
+
+                    request.onerror = (event) => {
+                        console.error('加载消息失败：', event);
+                    };
+                },
+                loadMoreMessages() {
+                    nextLength = this.currentLength + this.messagesToLoad;
+                    if (nextLength > this.allMessages.length) {
+                        nextLength == this.allMessages.length
+                    }
+                    const nextMessages = this.allMessages.slice(this.currentLength, nextLength);
+
+
+                    this.currentLength = nextLength
+                    // nextMessages.reverse().forEach(message => {
+                    //     this.messages.unshift(message); // 插入到数组顶部
+                    // });
+
+                    nextMessages.forEach(message => {
+                        this.displayMessage(message.text, message.type, message.avatar, true)
+                    })
+                    return true
+                },
+                clearDatabase() {
+                    const transaction = this.db.transaction(['messages'], 'readwrite');
+                    const objectStore = transaction.objectStore('messages');
+                    const request = objectStore.clear();
+
+                    request.onsuccess = () => {
+                        console.log('消息已清除');
+                        this.messages = [];
+                        const messagesDiv = document.getElementById('messages');
+                        while (messagesDiv.firstChild) {
+                            messagesDiv.removeChild(messagesDiv.firstChild);
+                        }
+                    };
+
+                    request.onerror = (event) => {
+                        console.error('清除消息失败：', event);
+                    };
+                },
+                handleScroll() {
+                    const messagesContainer = this.$el.querySelector('.messages-container');
+
+
+                    if (messagesContainer.scrollTop == 0) {
+                        oldScrollHeight = messagesContainer.scrollHeight
+                        var flag = this.loadMoreMessages()
+
+
+                        this.$nextTick(() => {
+                            newScrollHeight = messagesContainer.scrollHeight
+                            if (flag) {
+                                messagesContainer.scrollTop = newScrollHeight - oldScrollHeight;
+                            }
+
+                        });
+                    }
+                },
+                scrollToTheBottom() {
+                    this.$nextTick(() => {
+                        const messagesContainer = this.$el.querySelector('.messages-container');
+                        messagesContainer.scrollTo({
+                            top: messagesContainer.scrollHeight,
+                            behavior: 'smooth'
+                        });
+                    });
+                },
             }
-        }
-        initialize()
-
-        socket.onopen = function (event) {
-            console.log('WebSocket 连接已打开');
-            displayMessage('WebSocket 连接已打开', 'received',
-                'https://api.dicebear.com/9.x/pixel-art/svg');
-        };
-
-        socket.onmessage = function (event) {
-            console.log('收到消息：', event.data);
-            let data;
-
-            if (event.data instanceof Blob) {
-                event.data.text().then(function (text) {
-                    data = JSON.parse(text);
-                    displayMessage(data.message, 'received', data.avatar);
-                });
-            } else {
-                data = JSON.parse(event.data);
-                displayMessage(data.message, 'received', data.avatar);
-            }
-        };
-
-        socket.onclose = function (event) {
-            console.log('WebSocket 连接已关闭');
-            displayMessage('WebSocket 连接已关闭', 'received',
-                'https://api.dicebear.com/9.x/pixel-art/svg');
-        };
-
-        socket.onerror = function (error) {
-            console.error('WebSocket 发生错误：', error);
-            displayMessage('WebSocket 发生错误：' + error.message, 'received',
-                'https://api.dicebear.com/9.x/pixel-art/svg  ');
-        };
-
-
-
-        function sendMessage() {
-            const messageInput = document.querySelector('.search-input');
-            const message = messageInput.value;
-            if (message) {
-                const data = {
-                    message: messageInput.value,
-                    avatar: userAvatar
-                };
-                socket.send(JSON.stringify(data));
-                console.log('发送消息：', message);
-                displayMessage(message, 'sent', userAvatar);
-                messageInput.value = '';
-            }
-
-        }
-
-
-        function displayMessage(message, type, avatar) {
-            const messagesDiv = document.getElementById('messages');
-            const messageElement = document.createElement('div');
-            //头像生成
-            const avatarImg = document.createElement('img');
-            avatarImg.src = avatar;
-            avatarImg.className = 'avatar';
-
-            messageElement.className = 'message ' + type;
-            messagesDiv.appendChild(messageElement);
-            const textSpan = document.createElement('span');
-            textSpan.className = type === 'received' ? 'textReceived' : 'textSent';
-            textSpan.textContent = message
-            messageElement.appendChild(avatarImg);
-            messageElement.appendChild(textSpan);
-            scrollToTheBottom()
-        }
-
-
-
-        function scrollToTheBottom() {
-            const messagesContainer = document.getElementsByClassName('messages-container')[0]
-            messagesContainer.scrollTo({
-                top: messagesContainer.scrollHeight,
-                behavior: 'smooth'
-            });
-        }
-
-
-
+        });
         document.querySelector('.search-input').addEventListener('keydown', function (event) {
             if (event.key === 'Enter') {
                 sendMessage();
