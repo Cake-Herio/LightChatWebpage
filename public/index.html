@@ -276,7 +276,6 @@
                         this.socket.send(JSON.stringify(data));
                         console.log('发送消息：', this.newMessage);
                         this.displayMessage(this.newMessage, 'sent', this.userAvatar);
-                        // this.saveMessageLocally(this.newMessage, 'sent', this.userAvatar); //存入缓存
                         this.saveMessageToDatabase(this.newMessage, 'sent', this.userAvatar) //存入数据库
                         this.newMessage = '';
                     }
@@ -310,59 +309,6 @@
 
                 },
 
-
-                //缓存逻辑
-                // saveMessageLocally(text, type, avatar) {
-                //     const messages = JSON.parse(localStorage.getItem('chatMessages')) || [];
-                //     if (text === 'WebSocket 连接已打开' || text === 'WebSocket 连接已关闭') return;
-                //     messages.push({
-                //         text,
-                //         type,
-                //         avatar
-                //     });
-                //     localStorage.setItem('chatMessages', JSON.stringify(messages));
-                // },
-                // clearMessages() {
-                //     // 清空本地存储中的消息记录
-                //     localStorage.removeItem('chatMessages');
-
-                //     // 清空 Vue 实例中的消息数组
-                //     this.messages = [];
-
-                //     // 清空 DOM 中的消息元素
-                //     const messagesDiv = document.getElementById('messages');
-                //     while (messagesDiv.firstChild) {
-                //         messagesDiv.removeChild(messagesDiv.firstChild);
-                //     }
-
-                //     console.log('消息缓存已清空');
-                // },
-                // loadInitialMessages() {
-                //     this.allMessages = JSON.parse(localStorage.getItem('chatMessages')) || [];
-                //     this.loadMoreMessages();
-                //     const messagesContainer = this.$el.querySelector('.messages-container');
-                //     this.scrollHeight = messagesContainer.scrollHeight;
-                // },
-                // loadMoreMessages() {
-                //     const currentLength = this.messages.length;
-                //     const nextLength = currentLength + this.messagesToLoad;
-                //     const nextMessages = this.allMessages.slice(currentLength, nextLength);
-                //     if (!nextMessages.length) {
-                //         return false
-                //     }
-                //     nextMessages.reverse().forEach(message => {
-                //         this.messages.unshift(message); // 插入到数组顶部
-                //     });
-
-                //     nextMessages.reverse().forEach(message => {
-                //         this.displayMessage(message.text, message.type, message.avatar, true)
-                //     })
-                //     return true
-
-                // },
-
-
-                //数据库存储
                 initializeDatabase() {
 
                     const request = indexedDB.open('chatDatabase', 1);
@@ -428,9 +374,6 @@
 
 
                     this.currentLength = nextLength
-                    // nextMessages.reverse().forEach(message => {
-                    //     this.messages.unshift(message); // 插入到数组顶部
-                    // });
 
                     nextMessages.forEach(message => {
                         this.displayMessage(message.text, message.type, message.avatar, true)
